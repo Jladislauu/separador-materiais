@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Lista de Materiais</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+    <style>
+        table {
+            width: 100%;
+            margin-top: 20px;
+        }
+        th, td {
+            text-align: left;
+            padding: 8px;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .btn-actions {
+            display: flex;
+            gap: 5px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Materiais de Instalação</h1>
+    
+    <!-- Barra de Pesquisa -->
+    <div class="form-group">
+        <input type="text" id="searchInput" class="form-control" placeholder="Pesquisar por código, nome ou modelo">
+    </div>
+    
+    <!-- Tabela para exibir a lista de materiais -->
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Descrição</th>
+                <th>Código</th>
+                <th>Itens</th>
+                <th>Modelo</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody id="material-table-body">
+            <!-- Os itens serão inseridos aqui dinamicamente -->
+        </tbody>
+    </table>
+
+    <!-- Modal para inserir a quantidade -->
+    <div class="modal" id="quantityModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Inserir Quantidade</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <input type="number" id="quantityInput" class="form-control" placeholder="Quantidade">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="addToList">Adicionar</button>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>Lista de Materiais a Separar</h2>
+    <ul id="selected-materials" class="list-group">
+        <!-- Lista de materiais selecionados -->
+    </ul>
+    <button class="btn btn-success mt-3" onclick="generatePDF()">Gerar PDF</button>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+    let materials = [];
+    let selectedMaterials = [];
+
+    function loadMaterials() {
+        $.ajax({
+            url: 'php/get_materials.php', // Caminho relativo correto
+            method: 'GET',
+            dataType: 'json',
+            success: function (data) {
+                materials = data;
+                renderTable(materials);
+            },
+            error: function (xhr, status, error) {
+                console.error('Falha ao carregar os materiais:', status, error);
+            }
+        });
+    }
+
+    function renderTable(data) {
+        let materialTableBody = document.getElementById('material-table-body');
+        materialTableBody.innerHTML = ''; // Limpar a tabela
+        if (data && Array.isArray(data)) {
+            data.forEach(material => {
+                let tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${material.nome}</td>
+                    <td>${material.descricao}</td>
+                    <td>${material.codigo}</td>
+                    <td>${material.itens}</td>
+                    <td>${material.modelo}</td>
+                    <td class="btn-actions">
+                        <button class="btn btn-primary btn-sm" onclick="addMaterialToSelection(${material.id}, '${material.nome}')">Selecionar</button>
+                    </td>
+                `;
+                materialTableBody.appendChild(tr);
+            });
+        } else {
+            console.error('Dados inválidos recebidos do servidor:', data);
+        }
+    }
+
+    function addMaterialToSelection(id, nome) {
+        $('#quantityModal').modal('show');
+        document.getElementById('addToList').dataset.id = id;
+        document.getElementById('addToList').dataset.nome = nome;
+    }
+
+    document.getElementById('addToList').onclick = function () {
+        let nome = this.dataset.nome;
+        let id = this.dataset.id;
+        let quantity = document.getElementById('quantityInput').value;
+        if (quantity > 0) {
+            addMaterialToList(id, nome, quantity);
+            $('#quantityModal').modal('hide');
+        }
+    };
+
+    function addMaterialToList(id, nome, quantity) {
+        const existingMaterialIndex = selectedMaterials.findIndex(material => material.id === id);
+        if (existingMaterialIndex > -1) {
+            selectedMaterials[existingMaterialIndex].quantity = quantity;
+        } else {
+            selectedMaterials.push({ id, quantity, nome });
+        }
+        updateSelectedMaterialsList();
+    }
+
+    function updateSelectedMaterialsList() {
+        let selectedList = document.getElementById('selected-materials');
+        selectedList.innerHTML = ''; // Limpar a lista
+        selectedMaterials.forEach((material, index) => {
+            let li = document.createElement('li');
+            li.className = 'list-group-item';
+            li.innerHTML = `
+                Nome: ${material.nome}, Material ID: ${material.id}, Quantidade: ${material.quantity}
+                <button class="btn btn-primary btn-sm ml-2" onclick="editMaterial(${index})">Editar</button>
+                <button class="btn btn-danger btn-sm ml-2" onclick="removeMaterial(${index})">Remover</button>
+            `;
+            selectedList.appendChild(li);
+        });
+    }
+
+    function editMaterial(index) {
+        let material = selectedMaterials[index];
+        document.getElementById('quantityInput').value = material.quantity;
+        $('#quantityModal').modal('show');
+        document.getElementById('addToList').onclick = function () {
+            let newQuantity = document.getElementById('quantityInput').value;
+            if (newQuantity > 0) {
+                selectedMaterials[index].quantity = newQuantity;
+                updateSelectedMaterialsList();
+                $('#quantityModal').modal('hide');
+            }
+        };
+    }
+
+    function removeMaterial(index) {
+        selectedMaterials.splice(index, 1);
+        updateSelectedMaterialsList();
+    }
+
+    function generatePDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        doc.text('Lista de Materiais a Separar', 10, 10);
+        
+        let y = 20;
+        selectedMaterials.forEach(material => {
+            doc.text(`Nome: ${material.nome}, Material ID: ${material.id}, Quantidade: ${material.quantity}`, 10, y);
+            y += 10;
+        });
+
+        doc.save('lista-de-materiais.pdf');
+    }
+
+    function filterTable() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const filteredMaterials = materials.filter(material => 
+            material.nome.toLowerCase().includes(searchTerm) ||
+            material.codigo.toLowerCase().includes(searchTerm) ||
+            material.modelo.toLowerCase().includes(searchTerm)
+        );
+        renderTable(filteredMaterials);
+    }
+
+    document.getElementById('searchInput').addEventListener('input', filterTable);
+
+    window.onload = loadMaterials;
+</script>
+</body>
+</html>
